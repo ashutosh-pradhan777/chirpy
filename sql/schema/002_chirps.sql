@@ -1,10 +1,11 @@
 -- +goose Up
-Create Table users (
+Create Table chirps (
     id UUID primary key,
     created_at Timestamp not null,
     updated_at Timestamp not null,
-    email Text not null unique
+    body Text not null unique,
+    user_id UUID References users(id) On Delete Cascade
 );
 
 -- +goose Down
-DROP TABLE users;
+DROP TABLE chirps;
