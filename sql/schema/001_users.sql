@@ -8,3 +8,5 @@ Create Table users (
 
 -- +goose Down
 DROP TABLE users;
+
+

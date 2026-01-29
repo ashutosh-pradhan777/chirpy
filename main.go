@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ashutosh-pradhan777/chirpy/internal/database"
+	"github.com/ashutosh-pradhan777/chirpy/internal/auth"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -113,7 +114,26 @@ func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userData, err := cfg.dbQueries.CreateUser(r.Context(), email)
+	pwd, ok := data["password"].(string)
+	if !ok {
+		log.Printf("Can't fetch param. Mention correct keyword for password. ")
+		w.WriteHeader(500)
+		return
+	}
+
+	hashedpwd,err := auth.HashPassword(pwd)
+	if err != nil {
+		log.Printf("Error hashing password: %s", err)
+		w.WriteHeader(500)
+		return
+	}
+
+	params := database.CreateUserParams {
+		Email: email,
+		HashedPassword: hashedpwd,
+	}
+
+	userData, err := cfg.dbQueries.CreateUser(r.Context(), params)
 	if err != nil {
 		log.Printf("Error fetching user.")
 		w.WriteHeader(500)
@@ -136,6 +156,75 @@ func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(201)
+	w.Write([]byte(jsonresp))
+
+}
+
+func (cfg *apiConfig) loginUser(w http.ResponseWriter, r *http.Request) {
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		log.Printf("Error decoding parameters: %s", err)
+		w.WriteHeader(500)
+		return
+	}
+
+	defer r.Body.Close()
+
+	var data map[string]any
+
+	err2 := json.Unmarshal(body, &data)
+	if err2 != nil {
+		log.Printf("Error decoding parameters: %s", err2)
+		w.WriteHeader(500)
+		return
+	}
+
+	email, ok := data["email"].(string) // type assertion...
+	if !ok {
+		log.Printf("Can't fetch param. Mention correct keyword for email. ")
+		w.WriteHeader(500)
+		return
+	}
+
+	pwd, ok := data["password"].(string)
+	if !ok {
+		log.Printf("Can't fetch param. Mention correct keyword for password. ")
+		w.WriteHeader(500)
+		return
+	}
+
+	userData, err := cfg.dbQueries.ReturnUser(r.Context(),email)
+	if err != nil {
+		log.Printf("No such user: %s", err)
+		w.WriteHeader(500)
+		return
+	}
+
+	match,err := auth.CheckPasswordHash(pwd,userData.HashedPassword)
+	if err != nil || match == false{
+		log.Printf("Incorrect email or password")
+		w.WriteHeader(401)
+		return
+	}
+
+
+	respData := User{
+		ID:        userData.ID,
+		CreatedAt: userData.CreatedAt,
+		UpdatedAt: userData.UpdatedAt,
+		Email:     userData.Email,
+	}
+
+	jsonresp, err := json.Marshal(respData)
+	if err != nil {
+		log.Print("Error handling json marshalling.")
+		w.WriteHeader(500)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
 	w.Write([]byte(jsonresp))
 
 }
@@ -363,6 +452,8 @@ func main() {
 	mux.HandleFunc("GET /api/chirps", cfg.returnChirps)
 
 	mux.HandleFunc("GET /api/chirps/{chirpID}", cfg.getChirp)
+
+	mux.HandleFunc("POST /api/login", cfg.loginUser)
 
 	server := &http.Server{
 

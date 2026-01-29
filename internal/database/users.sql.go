@@ -7,23 +7,39 @@ package database
 
 import (
 	"context"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 const createUser = `-- name: CreateUser :one
-Insert into users (id, created_at, updated_at, email) 
+Insert into users (id, created_at, updated_at, email, hashed_password) 
 Values (
 
     gen_random_uuid(),
     NOW(),
     NOW(),
-    $1
+    $1,
+    $2
 )
 Returning id, created_at, updated_at, email
 `
 
-func (q *Queries) CreateUser(ctx context.Context, email string) (User, error) {
-	row := q.db.QueryRowContext(ctx, createUser, email)
-	var i User
+type CreateUserParams struct {
+	Email          string
+	HashedPassword string
+}
+
+type CreateUserRow struct {
+	ID        uuid.UUID
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Email     string
+}
+
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error) {
+	row := q.db.QueryRowContext(ctx, createUser, arg.Email, arg.HashedPassword)
+	var i CreateUserRow
 	err := row.Scan(
 		&i.ID,
 		&i.CreatedAt,
@@ -40,4 +56,23 @@ Delete from users
 func (q *Queries) ResetUser(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, resetUser)
 	return err
+}
+
+const returnUser = `-- name: ReturnUser :one
+Select id, created_at, updated_at, email, hashed_password from users
+where email = $1
+LIMIT 1
+`
+
+func (q *Queries) ReturnUser(ctx context.Context, email string) (User, error) {
+	row := q.db.QueryRowContext(ctx, returnUser, email)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Email,
+		&i.HashedPassword,
+	)
+	return i, err
 }
